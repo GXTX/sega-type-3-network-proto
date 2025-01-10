@@ -437,45 +437,6 @@ public:
 		}
 	}
 
-	template <typename T>
-	void nPoke(uint32_t addr, T value)
-	{
-		std::vector<uint8_t> req(4, 0);
-
-		if (std::is_same(decltype(value), std::vector<uint8_t>) && static_cast<std::vector<uint8_t>>(value).size() == 0x10) {
-			// poke16
-		} else {
-			// Naomi allows for byte, word, and dword aligned transactions, Chihiro only allows dword
-			// So we need to do a little cleanup...
-
-			const auto addrAligned = addr & ~0xF | addr & sizeof(uint32_t);
-			const auto type_size = sizeof(decltype(value));
-
-			*(reinterpret_cast<uint32_t*>(&req[0])) = addr == addrAligned ? addr : addrAligned;
-
-			if (addr != addrAligned) {
-				// don't fixup 
-			}
-
-
-
-
-			const auto new_addr = addr & ~0xF | addr & sizeof(uint32_t);
-			*(reinterpret_cast<uint32_t*>(&req[0])) = new_addr;
-
-			const auto type_size = sizeof(decltype(value));
-
-
-
-
-
-
-			// poke8
-		}
-	}
-
-
-
 	auto nControlRead(const uint32_t offset)
 	{
 		std::vector<uint8_t> req = {};
