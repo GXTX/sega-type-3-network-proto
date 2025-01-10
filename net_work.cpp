@@ -66,18 +66,17 @@ public:
 
 class NetDimm {
 public:
-	// Items marked /**/ are NOP on Chihiro 13.05, 11.00 however does
-	// include LOST_PACKET
+	// Items marked "." are NOP on Naomi 3.17, and "*" for Chihiro 13.05
 	enum class Command : uint8_t {
-		/**/ NOP              = 0x00, //
-		/**/ START_UP         = 0x01, //
-		/**/ HEALTH_CHECK     = 0x02, //
-		/**/ LOST_PACKET      = 0x03,
+		NOP                   = 0x00, // .*
+		START_UP              = 0x01, // .*
+		HEALTH_CHECK          = 0x02, // .*
+		LOST_PACKET           = 0x03, // .*
 		UNK1                  = 0x04, // nfWriteDimm
 		REQUEST_FOR_DIMM      = 0x05, //
-		/**/ TRANSFER_CANCEL  = 0x06,
-		HOST_MODE             = 0x07, //
-		DIMM_MODE             = 0x08, //
+		TRANSFER_CANCEL       = 0x06, // .*
+		HOST_MODE             = 0x07, // .
+		DIMM_MODE             = 0x08, // .
 		TERMINATE             = 0x09, //
 		HOST_RESTART          = 0x0A, //
 		WRITE_TO_FLASH        = 0x0B, //
@@ -85,8 +84,8 @@ public:
 		READ_EEPROM           = 0x0D, // READ_NVRAM
 		PEEK_HOST             = 0x10, //
 		POKE_HOST             = 0x11, //
-		/**/ ENABLE_OFF_LINE  = 0x14, //
-		/**/ DISABLE_OFF_LINE = 0x15, //
+		ENABLE_OFF_LINE       = 0x14, // .*
+		DISABLE_OFF_LINE      = 0x15, // .*
 		GET_COIN_INFORMATION  = 0x16, //
 		SET_TIME_LIMIT        = 0x17, //
 		GET_DIMM_INFORMATION  = 0x18, //
@@ -94,16 +93,16 @@ public:
 		NETFIRM_INFO          = 0x1E, //
 		RESET_FIRMWARE        = 0x1F, //
 		SECOND_BOOT_UPDATE    = 0x20, //
-		MEDIA_FORMAT = 0x21, // 1 uint32_t, appears to modify DIMM_MODE
-		                     // but only if DIP7 on Chihiro is set?
-		UNK2 = 0x22, // Appears to be a second WriteDimm command,
-		             // uint32_t addr, uint32_t unk, data
-		SET_MEDIA_INFO = 0x25, // 2 uint32_t's, only output from Chihiro
-		                       // "This media is DIMM."
-		SECURITY_KEYCODE = 0x7F, //
-		PeekHost16       = 0xF0, //
-		PokeHost16       = 0xF1, //
-		ControlRead = 0xF2, // I'm not sure what this is actually reading
+		MEDIA_FORMAT          = 0x21, // 1 uint32_t, appears to modify DIMM_MODE but only if DIP7 on Chihiro is set?, Spider sets this as 0x0004?
+		UNK2                  = 0x22, // Appears to be a second WriteDimm command, uint32_t addr, uint32_t unk, data
+		SET_MEDIA_INFO        = 0x25, // 2 uint32_t's, only output from Chihiro "This media is DIMM."
+		MEDIA_READ            = 0x26, // lrpMediaRead | Spider (SystemSP) only
+		MEDIA_ERASE           = 0x27, // Spider (SystemSP) only, trasn_ex
+		MEDIA_STATUS          = 0x28, // Spider (SystemSP) only, trasn_ex checks this after issuing MEDIA_FORMAT
+		SECURITY_KEYCODE      = 0x7F, //
+		PeekHost16            = 0xF0, //
+		PokeHost16            = 0xF1, //
+		ControlRead           = 0xF2, // I'm not sure what this is actually reading
 	};
 
 	struct NetDimmInformation {
