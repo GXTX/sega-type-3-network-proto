@@ -17,6 +17,7 @@
 
 using namespace std::chrono_literals;
 
+// https://github.com/aeldidi/crc32
 extern "C" uint32_t crc32(const void* input, size_t size);
 
 class NetDimmPacket {
