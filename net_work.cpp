@@ -108,9 +108,9 @@ public:
 	struct NetDimmInformation {
 		uint16_t unk;
 		uint16_t firmwareVersion;
-		uint16_t gameMemory;
-		uint16_t dimmMemory;
-		uint32_t crc;
+		uint16_t gameMemorySize;
+		uint16_t dimmMemorySize;
+		uint32_t gameCrc;
 	};
 
 	NetDimm(const std::string_view& host,
@@ -154,6 +154,7 @@ public:
 
 	bool disconnect()
 	{
+		// TODO: Check Naomi to make sure we aren't killing the network by issuing this, DragonMinded seems to think so
 		sendPacket({Command::TERMINATE, 0});
 		return !!connection.close();
 	}
@@ -188,8 +189,7 @@ public:
 		buffer.resize(packet.length);
 
 		while (toRead) {
-			const auto result = sock->recv(&buffer[packet.length - toRead],
-			                               toRead);
+			const auto result = sock->recv(&buffer[packet.length - toRead], toRead);
 
 			if (result) {
 				toRead -= static_cast<uint16_t>(result.value());
@@ -203,19 +203,10 @@ public:
 	}
 
 	// -----
-	void nNop(void)
-	{
-		sendPacket({Command::NOP, 0});
-	}
+	void nNop(void) { sendPacket({Command::NOP, 0}); }
 
-	void nRestartHost(void)
-	{
-		sendPacket({Command::HOST_RESTART, 0});
-	}
-	void nRestartFirmware(void)
-	{
-		sendPacket({Command::RESET_FIRMWARE, 0});
-	}
+	void nRestartHost(void) { sendPacket({Command::HOST_RESTART, 0}); }
+	void nRestartFirmware(void) { sendPacket({Command::RESET_FIRMWARE, 0}); }
 
 	void nSetTimeLimit(uint8_t hours)
 	{
@@ -229,21 +220,14 @@ public:
 		if (hours > 10) {
 			hours = 10;
 		}
-		sendPacket({
-		        Command::SET_TIME_LIMIT, 0, {hours, 0, 0, 0}
-                });
+		sendPacket({ Command::SET_TIME_LIMIT, 0, {hours, 0, 0, 0} });
 	}
 
 	// Chihiro 11.00 & 13.05 appear only to check this twice: Once on
 	// start-up to initiate a "Coin" service if BIT(0) is set, and on the
 	// "Network Test" screen where it will append the text "ETHER MODE" with
 	// the current set value.
-	void nSetDimmMode(const uint8_t mode, const uint8_t mask = 0)
-	{
-		sendPacket({
-		        Command::DIMM_MODE, 0, {mode, mask}
-                });
-	}
+	void nSetDimmMode(const uint8_t mode, const uint8_t mask = 0) { sendPacket({ Command::DIMM_MODE, 0, {mode, mask} }); }
 	auto nGetDimmMode()
 	{
 		sendPacket({Command::DIMM_MODE, 0});
@@ -251,24 +235,16 @@ public:
 	}
 
 	// Set this to 1 to trigger "Now loading..."
-	void nSetHostMode(const uint8_t mode, const uint8_t mask = 0)
-	{
-		sendPacket({
-		        Command::HOST_MODE, 0, {mode, mask}
-                });
-	}
+	void nSetHostMode(const uint8_t mode, const uint8_t mask = 0) { sendPacket({Command::HOST_MODE, 0, {mode, mask}}); }
 	auto nGetHostMode()
 	{
 		sendPacket({Command::HOST_MODE, 0});
 		return recvPacket().data;
 	}
 
-	void nSetOfflineMode(const bool enable = true)
-	{
-		sendPacket({enable ? Command::ENABLE_OFF_LINE : Command::DISABLE_OFF_LINE,
-		            0});
-	}
+	void nSetOfflineMode(const bool enable = true) { sendPacket({enable ? Command::ENABLE_OFF_LINE : Command::DISABLE_OFF_LINE, 0}); }
 
+	// TODO: Check jumper settings before attempting to nWriteEeprom
 	// Eeprom located on the netboard NOT mediaboard
 	auto nReadEeprom()
 	{
@@ -294,7 +270,7 @@ public:
 	auto nGetDimmInfo()
 	{
 		sendPacket({Command::GET_DIMM_INFORMATION, 0});
-		auto packet             = recvPacket().data;
+		const auto packet = recvPacket().data;
 		NetDimmInformation info = {};
 		std::memcpy(&info, packet.data(), sizeof(NetDimmInformation));
 		return info;
@@ -304,7 +280,7 @@ public:
 		std::vector<uint8_t> info(8, 0);
 		*(reinterpret_cast<uint32_t*>(&info[0])) = crc;
 		*(reinterpret_cast<uint32_t*>(&info[4])) = length;
-		sendPacket({Command::SET_DIMM_INFORMATION, 0x81, info});
+		sendPacket({Command::SET_DIMM_INFORMATION, lastPacket, info});
 	}
 
 	auto nReadNetfirmInfo()
@@ -330,9 +306,7 @@ public:
 	void nWriteSecondBoot(const std::vector<uint8_t>& data)
 	{
 		nUpload(netMemMask, data);
-		sendPacket({
-		        Command::SECOND_BOOT_UPDATE, 0, {0, 0, 0, 0}
-                });
+		sendPacket({Command::SECOND_BOOT_UPDATE, 0, {0, 0, 0, 0}});
 	}
 
 	// Type-3 Specific: If the jumper to utilize the 1st half of the flash
@@ -370,13 +344,9 @@ public:
 
 			if (offset + maxRequestSize > size) {
 				end = true;
-				std::copy(data.begin() + offset,
-				          data.end(),
-				          std::back_inserter(temp));
+				std::copy(data.begin() + offset, data.end(), std::back_inserter(temp));
 			} else {
-				std::copy(data.begin() + offset,
-				          data.begin() + offset + maxRequestSize,
-				          std::back_inserter(temp));
+				std::copy(data.begin() + offset, data.begin() + offset + maxRequestSize, std::back_inserter(temp));
 			}
 
 			NetDimmPacket x = {Command::UNK1,
@@ -411,9 +381,7 @@ public:
 		while (true) {
 			auto x = recvPacket();
 			if (x.data.size()) {
-				std::copy(x.data.begin() + requestHeaderSize,
-				          x.data.end(),
-				          std::back_inserter(req));
+				std::copy(x.data.begin() + requestHeaderSize, x.data.end(), std::back_inserter(req));
 			}
 
 			// TODO: First byte is actually the sequence byte,
@@ -446,7 +414,7 @@ public:
 		}
 		req.clear();
 
-		req                      = recvPacket().data;
+		req = recvPacket().data;
 		std::vector<uint8_t> out = {};
 		std::copy(req.begin() + 4, req.end(), std::back_inserter(out));
 		return out;
@@ -463,16 +431,54 @@ public:
 			sendPacket({Command::PokeHost16, 0, req});
 		} else {
 			req.resize(8);
-			*(reinterpret_cast<uint32_t*>(
-			        &req[4])) = static_cast<uint32_t>(value.size());
+			*(reinterpret_cast<uint32_t*>(&req[4])) = static_cast<uint32_t>(value.size());
 			std::copy(value.begin(), value.end(), std::back_inserter(req));
 			sendPacket({Command::POKE_HOST, 0, req});
 		}
 	}
 
+	template <typename T>
+	void nPoke(uint32_t addr, T value)
+	{
+		std::vector<uint8_t> req(4, 0);
+
+		if (std::is_same(decltype(value), std::vector<uint8_t>) && static_cast<std::vector<uint8_t>>(value).size() == 0x10) {
+			// poke16
+		} else {
+			// Naomi allows for byte, word, and dword aligned transactions, Chihiro only allows dword
+			// So we need to do a little cleanup...
+
+			const auto addrAligned = addr & ~0xF | addr & sizeof(uint32_t);
+			const auto type_size = sizeof(decltype(value));
+
+			*(reinterpret_cast<uint32_t*>(&req[0])) = addr == addrAligned ? addr : addrAligned;
+
+			if (addr != addrAligned) {
+				// don't fixup 
+			}
+
+
+
+
+			const auto new_addr = addr & ~0xF | addr & sizeof(uint32_t);
+			*(reinterpret_cast<uint32_t*>(&req[0])) = new_addr;
+
+			const auto type_size = sizeof(decltype(value));
+
+
+
+
+
+
+			// poke8
+		}
+	}
+
+
+
 	auto nControlRead(const uint32_t offset)
 	{
-		std::vector<uint8_t> req        = {};
+		std::vector<uint8_t> req = {};
 		constexpr auto maxControlOffset = 0x86F0;
 		if (offset >= maxControlOffset) {
 			return req;
@@ -487,10 +493,8 @@ public:
 		if (x.data.empty() || x.data.size() < 8) {
 			return req;
 		}
-		// return req;
-		std::copy(x.data.begin(),
-		          x.data.end() - sizeof(uint32_t),
-		          std::back_inserter(req));
+
+		std::copy(x.data.begin(), x.data.end() - sizeof(uint32_t), std::back_inserter(req));
 
 		return req;
 	}
@@ -500,15 +504,13 @@ public:
 	static constexpr auto port = 10703;
 	std::atomic_bool keepAlive = true;
 
-	static constexpr uint16_t maxRequestSize   = 0xF000;
+	static constexpr uint16_t maxRequestSize   = 0xF000; // Naomi appears to be 0x4000?
 	static constexpr uint8_t requestHeaderSize = 10;
 	static constexpr uint8_t moreData          = 0x80;
 	static constexpr uint8_t lastPacket        = 0x81;
 
-	// Reading/Writing from this location accesses the on-board RAM of the
-	// net board
-	static constexpr uint32_t netMemMask = 0xAC800000; // Top 3 nibbles are
-	                                                   // actually the mask
+	// Reading/Writing from this location accesses the on-board RAM of the net board
+	static constexpr uint32_t netMemMask = 0xAC800000;
 private:
 	sockpp::tcp_connector connection = {};
 	const std::string_view address   = {};
