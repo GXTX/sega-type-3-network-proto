@@ -1,0 +1,6 @@
+[submodule "3rdparty/sockpp"]
+	path = 3rdparty/sockpp
+	url = https://github.com/fpagliughi/sockpp.git
+[submodule "3rdparty/crc32"]
+	path = 3rdparty/crc32
+	url = https://github.com/aeldidi/crc32.git
