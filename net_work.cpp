@@ -525,8 +525,8 @@ int main()
 	// auto xx = net->nGetDimmInfo();
 	auto abc = net->nGetDimmInfo();
 	std::printf("NETDIMM Version : 0x%04X\n", abc.firmwareVersion);
-	std::printf("DIMM Size       : %d MB\n", abc.dimmMemory);
-	std::printf("DIMM CRC        : 0x%08X\n", abc.crc);
+	std::printf("DIMM Size       : %d MB\n", abc.dimmMemorySize);
+	std::printf("DIMM CRC        : 0x%08X\n", abc.gameCrc);
 
 		// net->nSetTimeLimit(10);
 		// auto a = net->nControlRead(0);
