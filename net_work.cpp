@@ -95,7 +95,7 @@ public:
 		RESET_FIRMWARE        = 0x1F, //
 		SECOND_BOOT_UPDATE    = 0x20, //
 		MEDIA_FORMAT          = 0x21, // 1 uint32_t, appears to modify DIMM_MODE but only if DIP7 on Chihiro is set?, Spider sets this as 0x0004?
-		UNK2                  = 0x22, // Appears to be a second WriteDimm command, uint32_t addr, uint32_t unk, data
+		UNK2                  = 0x22, // Writes to NAND boards for Triforce/Chihiro, unknown if this works for SystemSP
 		SET_MEDIA_INFO        = 0x25, // 2 uint32_t's, only output from Chihiro "This media is DIMM."
 		MEDIA_READ            = 0x26, // lrpMediaRead | Spider (SystemSP) only
 		MEDIA_ERASE           = 0x27, // Spider (SystemSP) only, trasn_ex
@@ -319,6 +319,60 @@ public:
 		sendPacket({Command::WRITE_TO_FLASH, 0});
 	}
 
+	// Used to write to the NAND on games like Mario Kart GP. If the machine
+	// doesn't have a NAND board present it'll just write to DIMM memory automatically
+	void nWriteDimmNand(uint32_t addr, const std::vector<uint8_t>& data)
+	{
+		const auto size = data.size();
+
+		// FIXME: Refactor to have sendPacket take a void* so we can
+		// avoid needless copies
+		std::vector<uint8_t> temp = {};
+		temp.reserve(maxRequestSize * 2);
+
+		uint32_t offset = 0;
+		bool end = false;
+
+		auto start = std::chrono::high_resolution_clock::now();
+		auto now = std::chrono::high_resolution_clock::now();
+		size_t sent = 0;
+
+		constexpr auto headerSize = 8;
+		constexpr auto maxPayloadSize = 0x400;
+
+		while (offset < size) {
+			temp.clear();
+			temp.resize(headerSize);
+
+			*(reinterpret_cast<uint32_t*>(&temp[0])) = addr + offset;
+			*(reinterpret_cast<uint32_t*>(&temp[4])) = 0; // FIXME: Doesn't seem to change anything?
+
+			if (offset + maxPayloadSize > size) {
+				end = true;
+				std::copy(data.begin() + offset, data.end(), std::back_inserter(temp));
+			}
+			else {
+				std::copy(data.begin() + offset, data.begin() + offset + maxPayloadSize, std::back_inserter(temp));
+			}
+
+			NetDimmPacket x = { Command::UNK2,
+							   0, // FIXME: Does this really not care if we don't set the markers?
+							   temp };
+			sendPacket(x);
+			offset += maxPayloadSize;
+
+			sent += temp.size();
+			now = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> duration = now - start;
+			if (duration.count() >= 1.0 || end) {
+				double speed = sent * duration.count() / 1000 / 1000;
+				std::printf("%.2f (%08X / %08X)\n", speed, offset, size);
+				sent = 0;
+				start = std::chrono::high_resolution_clock::now();
+			}
+		}
+	}
+
 	void nUpload(uint32_t addr, const std::vector<uint8_t>& data)
 	{
 		const auto size = data.size();
@@ -466,7 +520,7 @@ public:
 	static constexpr auto port = 10703;
 	std::atomic_bool keepAlive = true;
 
-	static constexpr uint16_t maxRequestSize   = 0xF000; // Naomi appears to be 0x4000?
+	static constexpr uint16_t maxRequestSize   = 0x4000; // Naomi appears to be 0x4000?
 	static constexpr uint8_t requestHeaderSize = 10;
 	static constexpr uint8_t moreData          = 0x80;
 	static constexpr uint8_t lastPacket        = 0x81;
@@ -488,363 +542,3 @@ private:
 		}
 	}
 };
-
-int main()
-{
-	std::cout << "Hello World!\n";
-
-	// std::string fileName =
-	// "D:\\Users\\Aaron\\Desktop\\fiurmm\\Media\\Ver1100.bin";
-	std::string fileName = "C:\\Temp\\xab";
-	std::ifstream file(fileName.c_str(),
-	                   std::ifstream::in | std::ifstream::binary);
-
-	std::vector<uint8_t> buffer = {};
-	buffer.resize(std::filesystem::file_size(fileName.c_str()));
-	file.read((char*)&buffer[0], std::filesystem::file_size(fileName.c_str()));
-	file.close();
-
-	// std::printf("%X %X", ~(crc32(buffer.data(), buffer.size())),
-	// crc32(buffer.data(), buffer.size()));
-
-#if 1
-
-	std::promise<uint32_t> crc32_val;
-	std::future<uint32_t> future = crc32_val.get_future();
-	std::thread(
-	        [&buffer](std::promise<uint32_t> crc32_val) {
-		        crc32_val.set_value(~(crc32(buffer.data(), buffer.size())));
-	        },
-	        std::move(crc32_val))
-	        .detach();
-
-	auto net = std::make_unique<NetDimm>("10.0.0.4", true);
-	net->connect();
-	#if 1
-	// C 1305 200 1F0 CFC4F650
-	// auto xx = net->nGetDimmInfo();
-	auto abc = net->nGetDimmInfo();
-	std::printf("NETDIMM Version : 0x%04X\n", abc.firmwareVersion);
-	std::printf("DIMM Size       : %d MB\n", abc.dimmMemorySize);
-	std::printf("DIMM CRC        : 0x%08X\n", abc.gameCrc);
-
-		// net->nSetTimeLimit(10);
-		// auto a = net->nControlRead(0);
-		// for (auto x : a)
-		//     std::printf("%02X ", x);
-	#endif
-	// net->nSetDimmMode(0, 0);
-
-	#if 1
-	// net->nSetHostMode(1);
-	// std::this_thread::sleep_for(std::chrono::seconds(10));
-	// net->nUpload(0, buffer);
-	std::this_thread::sleep_for(std::chrono::milliseconds(500));
-	auto a = future.get();
-	// net->nSetDimmInfo(~a, static_cast<uint32_t>(buffer.size()));
-	std::printf("%08X\n", ~a);
-	// net->sendPacket({NetDimm::Command::WRITE_TO_FLASH, 0x80});
-	net->nWriteNetFlash(buffer);
-	std::this_thread::sleep_for(std::chrono::seconds(10));
-	net->nNop();
-	net->nNop();
-	net->nNop();
-	net->nNop();
-	net->nNop();
-		// std::this_thread::sleep_for(std::chrono::milliseconds(500));
-		// net->nRestartHost();
-		// std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	#endif
-
-	// 0xfffeffe0
-	// auto x = net->nDownload(0x0, 0x1000);
-	// std::ofstream card;
-	// card.open("C:\\Temp\\lol.bin", std::ofstream::out |
-	// std::ofstream::binary); card.write(reinterpret_cast<char
-	// *>(x.data()), x.size()); card.close(); for (const auto a : x)
-	//    std::printf(" %02X", a);
-	// std::printf("\n");
-
-	// std::vector<uint8_t> xyz(0x600, 0x55);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 0);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 0);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 6);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 0);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 0);
-	// xyz.insert(xyz.begin(), 0); xyz.insert(xyz.begin(), 0);
-
-	// net->sendPacket({ NetDimm::Command::UNK2, 0, xyz });
-
-	// x = net->nDownload(0x0, 0x1000);
-	// for (const auto a : x)
-	//     std::printf(" %02X", a);
-	// std::printf("\n");
-
-	// std::this_thread::sleep_for(std::chrono::seconds(2));
-	// net->sendPacket({ NetDimm::Command::ENABLE_OFF_LINE, 0 });
-	// net->sendPacket({ NetDimm::Command::DISABLE_OFF_LINE, 0 });
-	// net->nSetTimeLimit(0x8000);
-	// net->sendPacket({ NetDimm::Command::SET_TIME_LIMIT, 0, { 0xff, 0xff,
-	// 0xff, 0xff } }); net->nSetKeyCode({0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	// 0xff, 0xff}); auto x = net->nReadCoinInfo(); for (const auto a : x)
-	//     std::printf(" %02X", a);
-	// std::printf("\n");
-	#if 0
-    x = net->nGetHostMode();
-    for (const auto a : x)
-        std::printf(" %02X", a);
-    std::printf("\n");
-    x = net->nReadNetfirmInfo();
-    for (const auto a : x)
-        std::printf(" %02X", a);
-    std::printf("\n");
-	#endif
-	#if 0
-    x = net->nGetHostMode();
-    for (const auto a : x)
-        std::printf(" %02X", a);
-    std::printf("\n");
-    x = net->nReadNetfirmInfo();
-    for (const auto a : x)
-        std::printf(" %02X", a);
-    std::printf("\n");
-    x = net->nReadEeeprom();
-    for (const auto a : x)
-        std::printf(" %02X", a);
-    std::printf("\n");
-	#endif
-	#if 0
-    net->nSetHostMode(1);
-    std::this_thread::sleep_for(std::chrono::seconds(8));
-    net->nUpload(0, buffer);
-    net->nSetDimmInfo(future.get(), static_cast<uint32_t>(buffer.size()));
-    net->nNop(); net->nNop(); net->nNop(); net->nNop(); net->nNop();
-    net->nRestartHost();
-	#endif
-#endif
-	// net->sendPacket({ NetDimm::Command::MEDIA_FORMAT, 0, true, { 0x0C, 0,
-	// 0, 0 } }); net->nRestartHost();
-
-	// net->sendPacket({ NetDimm::Command::DISABLE_OFF_LINE, 0, true });
-
-	// net->nPoke(0x10000, { 0x55, 0xAA, 0x55, 0xAA });
-	// auto ab = net->nPeek(0x10000, 4);
-	// std::printf("a");
-	// std::ofstream card;
-	// card.open(fileName2, std::ofstream::out | std::ofstream::binary |
-	// std::ios_base::app); card.write(reinterpret_cast<const char
-	// *>(ab.data()), ab.size()); card.close();
-	//
-	// auto la = 0;
-#if 0
-    for (auto l = 0; l < 0x86F0; l += 4)
-    {
-        auto xx = net->nControlRead(l);
-        for (const auto aa : xx)
-            std::printf(" %02X", aa);
-        //std::printf("\n");
-    }
-#endif
-#if 0
-    for (auto l = 0; l < 0x86f0; l += 4)
-    {
-        auto xx = net->nControlRead(l);
-        for (const auto aa : xx)
-            std::printf(" %02X", aa);
-        //std::printf("\n");
-   }
-
-    std::printf("\n");
-
-
-
-    net->nUpload(0, buffer);
-
-    //net->sendPacket({ NetDimm::Command::NOP, 0, true });
-   // net->sendPacket({ NetDimm::Command::NOP, 0, true });
-    //net->sendPacket({ NetDimm::Command::NOP, 0, true });
-   // net->sendPacket({ NetDimm::Command::NOP, 0, true });
-   //net->sendPacket({ NetDimm::Command::NOP, 0, true });
-
-    //net->nRestartHost();
-
-    //net->connect();
-
-    //auto lol = net->nDownload(0x0, 0x100);
-    //for (const auto aa : lol)
-    //    std::printf(" %02X", aa);
-   // std::printf("\n");                  //           |     
-    //std::vector<uint8_t> xa = { 0, 0, 0, 0, 0, 0, 0, 0, 0x77, 0x77, 0x77, 0x77, 0x55, 0xaa, 0x55, 0xaa };
-    //std::vector<uint8_t> xa = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    //for (int i = 0x23; i < 0x25; i++)
-    //{
-    //    net->sendPacket({ i, 0, true, xa });
-    //    auto lol = net->recvPacket().data;
-    //    std::printf("%X: ");
-    //    for (const auto aa : lol)
-    //            std::printf(" %02X", aa);
-    //    std::printf("\n");
-    //}
-    //net->sendPacket({ NetDimm::Command::UNK2, 0, true, xa });
-    //auto lol = net->recvPacket().data;
-    //net->nRestartHost();
-    //lol = net->nDownload(0x0, 0x100);
-    //for (const auto aa : lol)
-    //    std::printf(" %02X", aa);
-    //std::printf("\n");
-    //std::this_thread::sleep_for(std::chrono::seconds(12));
-    //net->nRestartFirmware();
-    //net->disconnect();
-    //std::this_thread::sleep_for(std::chrono::seconds(12));
-    //net->connect();
-    //net->nUpload(0, buffer);
-    //std::this_thread::sleep_for(std::chrono::seconds(12));
-    //auto alla = net->nDownload(0, 0x7fffffff);
-
-    //auto xb = net->recvPacket();
-    std::printf("x");
-
-    uint32_t off = 0;
-    while (true) {
-        auto a = net->nControlRead(off);
-        std::printf("%08X: ", off);
-        //for (const auto ab : a)
-        //    std::printf(" %02X", ab);
-        card.write(reinterpret_cast<const char*>(a.data()), a.size());
-        card.flush();
-        off += 4;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    card.close();
-    //net->sendPacket({ NetDimm::Command::ControlRead, 0, true, { 0, 0, 0, 0 } });
-    //auto x = net->recvPacket();
-    std::printf("a");
-    std::printf("a");
-#endif
-#if 0
-    std::vector<uint8_t> ab = { 0, 0, 0, 1 };
-    net->sendPacket({ NetDimm::Command::ControlRead, 0 , true, ab });
-    auto x = net->recvPacket();
-    std::printf("a");
-#endif
-	// net->nUpload(0, buffer);
-	// auto ab = net->nDownload(0x3ffe0000, 0x20000);
-	// std::ofstream card;
-	// card.open(fileName2, std::ofstream::out | std::ofstream::binary);
-	// card.write(reinterpret_cast<const char *>(ab.data()), ab.size());
-	// card.close();
-
-	// net->nSetOfflineMode(true);
-
-	// net->nSetKeyCode({ 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55 });
-
-	// auto x = net->nReadCoinInfo(); // 03 00 00 00 80 40 0F 00
-	// for (const auto a : x)
-	//     std::printf(" %02X", a);
-
-	// std::cout << std::endl;
-	// auto x = net->nReadNetfirmInfo();
-	// for (const auto a : x)
-	//     std::printf(" %02X", a);
-	// std::cout << std::endl;
-	// net->nRestartFirmware();
-	// net->nRestartHost();
-	// auto x = net->nReadDimmInfo(); // 0C 00 00 11 F0 01 00 02 00 00 00 00
-	//  for (const auto a : x)
-	//     std::printf(" %02X", a);
-	// std::cout << std::endl;
-#if 0
-    //                                                      DIMM_MODE |     |     |
-    //net->sendPacket({ NetDimm::Command::MEDIA_FORMAT, 0, true, { 0x55, 0xff, 0xff, 0xaa } });
-    //net->nPoke()
-
-   //// while (true) {
-    //    net->nPoke(0x10000 + 0xF6C8, { 0x72, 0x2E, 0x32, 0x2E });
-   //     net->nPoke(0x10000 + 0xF6CC, { 0x32, 0x32, 0x2E, 0x32 });
-   // }
-
-
-
-
-    //net->nPoke(0x10000 + 0xF6C8, { 0x72, 0x2E, 0x32, 0x2E });
-    //net->nPoke(0x10000 + 0xF6CC, { 0x32, 0x32, 0x2E, 0x32 }); 
-    //net->nRestartHost();
-   // lol:
-    auto a = net->nGetDimmMode();
-    //a = net->nReadDimmInfo(); // 0C 00 05 13 F0 01 00 02 F1 86 E4 E6
-    for (const auto ab : a)
-        std::printf(" %02X", ab);
-    std::cout << std::endl;
-
-    //a = net->nPeek(0x10000 + 0xF6C8, 4);
-    //a = net->nReadDimmInfo(); // 0C 00 05 13 F0 01 00 02 F1 86 E4 E6
-    //for (const auto ab : a)
-    //    std::printf(" %02X", ab);
-    //std::cout << std::endl;
-
-
-
-
-    //net->nSetHostMode(1, 0);
-
-
-    a = net->nGetHostMode();
-    //a = net->nReadDimmInfo(); // 0C 00 05 13 F0 01 00 02 F1 86 E4 E6
-    for (const auto ab : a)
-        std::printf(" %02X", ab);
-    std::cout << std::endl;
-
-    //net->nSetDimmMode(255);
-    //auto ab = net->nGetDimmMode(); // 0C 00 05 13
-    //for (auto b : ab)
-    //    std::printf(" %02X", b);
-    //std::cout << std::endl;
-
-    //net->nSetHostMode(5, 0);
-    //ab = net->nGetHostMode(); // 04 00 00 00
-    //for (auto b : ab)
-    //    std::printf(" %02X", b);
-    //std::cout << std::endl;
-
-
-    a = net->nReadDimmInfo(); // 0C 00 00 11 F0 01 00 02 00 00 00 00
-    for (const auto ab : a)
-        std::printf(" %02X", ab);
-    std::cout << std::endl;
-
-    a = net->nReadNetfirmInfo(); // 0C 00 00 11 F0 01 00 02 00 00 00 00
-    for (const auto ab : a)
-        std::printf(" %02X", ab);
-    std::cout << std::endl;
-
-
-
-    net->nSetDimmInfo(future.get(), static_cast<uint32_t>(std::filesystem::file_size(fileName.c_str())));
-    //net->nSetDimmInfo(0, 0);
-    net->nNop();
-    net->nRestartHost();
-    net->disconnect();
-    
-   // goto lol;
-    //a = net->nReadEeeprom();
-    //for (auto b : a)
-    //    std::printf(" %02X", b);
-    //std::cout << std::endl;
-
-    //std::this_thread::sleep_for(1s);
-
-    //net->nWriteEeprom(buffer);
-    //ab = net->recvPacket().data;
-    //for (auto b : ab)
-    //    std::printf(" %02X", b);
-    //std::cout << std::endl;
-
-    //std::this_thread::sleep_for(1s);
-
-    //ab = net->nReadEeeprom();
-    //for (auto b : ab)
-    //    std::printf(" %02X", b);
-    //std::cout << std::endl;
-#endif
-	return 0;
-}
